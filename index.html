@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Overhead — Live Air Traffic Spotter Sheet</title>
+<style>
+  :root {
+    --paper: #f2efe6;
+    --paper-dark: #e8e4d8;
+    --ink: #2b2b2b;
+    --ink-soft: #55524a;
+    --accent: #8a2b2b;
+    --line: #b9b3a4;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #23211d;
+    font-family: Georgia, 'Times New Roman', serif;
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 24px;
+  }
+  .sheet {
+    background: var(--paper);
+    width: 100%;
+    max-width: 760px;
+    padding: 36px 40px 60px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.55);
+    position: relative;
+  }
+  .sheet::before {
+    content: "";
+    position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(0,0,0,.025) 1px, transparent 1px);
+    background-size: 4px 4px;
+    pointer-events: none;
+  }
+  header.masthead {
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 10px;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .masthead h1 {
+    font-size: 15px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .masthead .clock {
+    font-size: 14px;
+    font-style: italic;
+    color: var(--ink-soft);
+  }
+  .subhead {
+    border-bottom: 1px solid var(--line);
+    padding: 6px 0 14px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+  .subhead b { color: var(--ink); font-style: normal; }
+
+  .controls {
+    display: flex;
+    gap: 8px;
+    margin: 18px 0 8px;
+    flex-wrap: wrap;
+  }
+  .controls input[type=text] {
+    flex: 1;
+    min-width: 200px;
+    font-family: Georgia, serif;
+    font-size: 16px;
+    padding: 9px 12px;
+    border: 1.5px solid var(--ink);
+    background: #fbf9f3;
+    color: var(--ink);
+    outline: none;
+  }
+  .controls input[type=text]:focus { box-shadow: 2px 2px 0 var(--ink); }
+  .controls button {
+    font-family: Georgia, serif;
+    font-size: 15px;
+    padding: 9px 20px;
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    cursor: pointer;
+    letter-spacing: .05em;
+  }
+  .controls button:hover { background: #444; }
+  .controls button:disabled { opacity: .5; cursor: wait; }
+  .controls button.ghost {
+    background: transparent;
+    color: var(--ink);
+    border: 1.5px solid var(--ink);
+  }
+  .controls button.ghost:hover { background: var(--paper-dark); }
+
+  /* ── AI painting output ── */
+  .painting { margin-top: 24px; }
+  .painting img {
+    width: 100%; height: auto; display: block;
+    border: 1px solid var(--line);
+    box-shadow: 3px 3px 0 rgba(43,43,43,.12);
+  }
+  .painting-meta {
+    font-size: 11.5px; font-style: italic; color: var(--ink-soft);
+    padding: 6px 2px 0; text-align: right;
+  }
+  select {
+    font-family: Georgia, serif;
+    font-size: 14px;
+    padding: 9px;
+    border: 1.5px solid var(--ink);
+    background: #fbf9f3;
+    color: var(--ink);
+  }
+  .status {
+    font-size: 13px;
+    font-style: italic;
+    color: var(--accent);
+    min-height: 18px;
+    margin-bottom: 10px;
+  }
+
+  .entries { margin-top: 26px; }
+  .entry {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .entry:last-child { border-bottom: none; }
+  .entry.flip { flex-direction: row-reverse; text-align: right; }
+  .entry.flip .caption .callsign-row { justify-content: flex-end; }
+  .entry .art { flex: 0 0 55%; max-width: 55%; }
+  .entry .art svg { width: 100%; height: auto; display: block; }
+  .entry .art img {
+    width: 100%; height: auto; display: block;
+  }
+  /* ── style filters (approximations of the tesserae painting styles) ── */
+  .art img.img-photo {}
+  .art img.img-sepia { filter: sepia(.45) contrast(1.05) brightness(1.02); mix-blend-mode: multiply; }
+  .art img.img-watercolour { filter: url(#fx-watercolour); mix-blend-mode: multiply; }
+  .art img.img-engraving { filter: url(#fx-engraving); mix-blend-mode: multiply; }
+  .art img.img-woodblock { filter: url(#fx-woodblock); mix-blend-mode: multiply; }
+  .art img.img-risograph { filter: url(#fx-risograph); mix-blend-mode: multiply; }
+  .art img.img-blueprint { filter: url(#fx-blueprint); }
+  .art img.img-charcoal { filter: url(#fx-charcoal); mix-blend-mode: multiply; }
+  .art img.img-pixel { image-rendering: pixelated; }
+  .caption { flex: 1; font-size: 13.5px; line-height: 1.5; }
+  .callsign-row {
+    display: flex; align-items: center; gap: 8px;
+    justify-content: flex-start; flex-wrap: wrap;
+  }
+  .callsign { font-size: 16px; font-weight: 700; letter-spacing: .06em; }
+  .atype {
+    font-size: 11px;
+    border: 1px solid var(--ink-soft);
+    padding: 0 5px;
+    color: var(--ink-soft);
+  }
+  .country { font-size: 11px; font-style: italic; color: var(--ink-soft); }
+  .detail { font-style: italic; color: var(--ink-soft); }
+  .where { font-size: 12px; color: var(--ink); margin-top: 2px; }
+  .credit { font-size: 10px; color: #97917f; }
+  .credit a { color: inherit; }
+
+  .empty { text-align: center; padding: 70px 20px; font-style: italic; color: var(--ink-soft); }
+  .empty .big { font-size: 20px; margin-bottom: 8px; }
+
+  footer {
+    margin-top: 30px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  footer a { color: var(--accent); }
+
+  @media (max-width: 560px) {
+    .sheet { padding: 24px 18px 40px; }
+    .entry, .entry.flip { flex-direction: column; text-align: center; }
+    .entry .art { max-width: 90%; margin: 0 auto; }
+    .entry.flip .caption .callsign-row { justify-content: center; }
+  }
+</style>
+</head>
+<body>
+<!-- SVG filter defs for the style picker -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="fx-watercolour">
+      <feGaussianBlur stdDeviation="0.9"/>
+      <feColorMatrix type="matrix" values="1.05 0 0 0 0.02  0 1.05 0 0 0.02  0 0 1.05 0 0.03  0 0 0 1 0"/>
+      <feComponentTransfer><feFuncR type="gamma" exponent="0.9"/><feFuncG type="gamma" exponent="0.9"/><feFuncB type="gamma" exponent="0.9"/></feComponentTransfer>
+    </filter>
+    <filter id="fx-engraving">
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer><feFuncR type="linear" slope="2.4" intercept="-0.55"/><feFuncG type="linear" slope="2.4" intercept="-0.55"/><feFuncB type="linear" slope="2.4" intercept="-0.55"/></feComponentTransfer>
+    </filter>
+    <filter id="fx-woodblock">
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer><feFuncR type="discrete" tableValues="0.05 0.35 0.75 1"/><feFuncG type="discrete" tableValues="0.05 0.35 0.75 1"/><feFuncB type="discrete" tableValues="0.05 0.35 0.75 1"/></feComponentTransfer>
+    </filter>
+    <filter id="fx-risograph">
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer><feFuncR type="discrete" tableValues="0.25 0.85 1"/><feFuncG type="discrete" tableValues="0.1 0.3 0.9"/><feFuncB type="discrete" tableValues="0.2 0.45 1"/></feComponentTransfer>
+    </filter>
+    <filter id="fx-blueprint">
+      <feColorMatrix type="saturate" values="0"/>
+      <feColorMatrix type="matrix" values="0.3 0.59 0.11 0 0.1  0.3 0.59 0.11 0 0.2  0.3 0.59 0.11 0 0.1  0 0 0 1 0"/>
+    </filter>
+    <filter id="fx-charcoal">
+      <feColorMatrix type="saturate" values="0"/>
+      <feGaussianBlur stdDeviation="0.4"/>
+      <feComponentTransfer><feFuncR type="linear" slope="0.85" intercept="0.12"/><feFuncG type="linear" slope="0.85" intercept="0.12"/><feFuncB type="linear" slope="0.85" intercept="0.12"/></feComponentTransfer>
+    </filter>
+  </defs>
+</svg>
+<div class="sheet">
+  <header class="masthead">
+    <h1 id="title">Overhead &middot; Within <span id="radiusLabel">35</span> km &middot; In the air now</h1>
+    <span class="clock" id="clock"></span>
+  </header>
+  <div class="subhead" id="subhead">Search for a place to see every aircraft currently overhead.</div>
+
+  <div class="controls">
+    <input type="text" id="placeInput" placeholder="e.g. Melbourne, Coolangatta, 94114…" autocomplete="off">
+    <select id="radiusSel">
+      <option value="10">10 km</option>
+      <option value="35" selected>35 km</option>
+      <option value="80">80 km</option>
+    </select>
+    <select id="styleSel" title="Artwork style">
+      <option value="photo" selected>Photo</option>
+      <option value="sepia">Sepia photo</option>
+      <option value="watercolour">Watercolour</option>
+      <option value="engraving">Engraving</option>
+      <option value="woodblock">Woodblock</option>
+      <option value="risograph">Risograph</option>
+      <option value="blueprint">Blueprint</option>
+      <option value="charcoal">Charcoal</option>
+      <option value="pixel">Pixel art</option>
+      <option value="silhouette">Silhouette</option>
+    </select>
+    <button id="goBtn">Search</button>
+    <button id="paintBtn" class="ghost" title="AI-paint the current sheet (~$0.05 via OpenRouter)">🎨 Paint</button>
+  </div>
+  <div class="status" id="status"></div>
+
+  <div class="painting" id="painting" hidden>
+    <img id="paintingImg" alt="AI painting of aircraft overhead">
+    <div class="painting-meta" id="paintingMeta"></div>
+  </div>
+
+  <div class="entries" id="entries">
+    <div class="empty">
+      <div class="big">✈</div>
+      No location loaded yet.<br>Type a town, city or postcode above and press Search.
+    </div>
+  </div>
+
+  <footer>
+    <span>Live data: <a href="https://adsb.lol" target="_blank">adsb.lol</a> &amp; OpenSky &middot; Photos: <a href="https://www.planespotters.net" target="_blank">planespotters.net</a></span>
+    <span id="lastUpdate"></span>
+  </footer>
+</div>
+
+<script>
+// ───────── SVG silhouettes (used when no airframe photo is available) ─────────
+const SIL = {
+  airliner: `<svg viewBox="0 0 300 120" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#2b2b2b" stroke-width="2.2" stroke-linejoin="round">
+    <path d="M25 62 Q60 52 120 50 L235 50 Q272 52 288 58 Q292 60 288 63 Q250 74 200 76 L110 76 Q60 74 25 62 Z" fill="#f2efe6"/>
+    <path d="M148 52 L120 22 Q117 18 122 17 L136 16 L188 50" fill="#f2efe6"/>
+    <path d="M150 74 L138 100 Q136 105 141 104 L156 101 L200 76" fill="#f2efe6"/>
+    <path d="M92 58 L60 44 Q55 42 58 47 L76 60" fill="#f2efe6"/>
+    <path d="M255 55 L262 38 Q264 34 267 37 L272 41 L278 56" fill="#f2efe6"/>
+    <ellipse cx="196" cy="52" rx="26" ry="5" stroke-width="1.2"/>
+    <path d="M40 60 Q80 66 130 67 M170 76 Q210 78 240 72" stroke-width="1.2"/>
+    <circle cx="70" cy="64" r="5"/><circle cx="245" cy="70" r="5"/>
+  </svg>`,
+  twinjet: `<svg viewBox="0 0 300 120" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#2b2b2b" stroke-width="2.2" stroke-linejoin="round">
+    <path d="M30 64 Q70 54 130 53 L240 53 Q270 55 284 60 Q288 62 284 65 Q245 74 200 75 L120 75 Q70 73 30 64 Z" fill="#f2efe6"/>
+    <path d="M150 55 L126 28 Q123 24 128 24 L140 24 L184 53" fill="#f2efe6"/>
+    <path d="M150 74 L142 98 Q140 102 145 101 L158 98 L196 74" fill="#f2efe6"/>
+    <ellipse cx="110" cy="63" rx="18" ry="7" fill="#f2efe6"/>
+    <ellipse cx="200" cy="63" rx="18" ry="7" fill="#f2efe6"/>
+    <circle cx="72" cy="66" r="5"/><circle cx="240" cy="70" r="5"/>
+  </svg>`,
+  turboprop: `<svg viewBox="0 0 300 120" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#2b2b2b" stroke-width="2.2" stroke-linejoin="round">
+    <path d="M40 64 Q90 55 150 55 L250 55 Q272 57 282 61 Q286 63 282 66 Q245 73 205 74 L130 74 Q85 72 40 64 Z" fill="#f2efe6"/>
+    <path d="M155 57 L135 34 Q132 30 137 30 L148 31 L182 56" fill="#f2efe6"/>
+    <ellipse cx="96" cy="62" rx="13" ry="9" fill="#f2efe6"/>
+    <path d="M96 44 L96 80 M80 50 L112 74 M80 74 L112 50" stroke-width="1.6"/>
+    <path d="M60 60 L38 50 L42 60 L38 70 L60 68" fill="#f2efe6"/>
+    <circle cx="70" cy="67" r="4.5"/><circle cx="250" cy="70" r="4.5"/>
+  </svg>`,
+  light: `<svg viewBox="0 0 300 120" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#2b2b2b" stroke-width="2.2" stroke-linejoin="round">
+    <path d="M60 66 Q100 58 160 58 L250 58 Q268 60 276 63 Q280 65 276 67 Q240 72 200 72 L140 72 Q95 70 60 66 Z" fill="#f2efe6"/>
+    <path d="M170 59 L150 36 Q147 32 152 32 L162 33 L192 58" fill="#f2efe6"/>
+    <path d="M70 60 L48 50 L52 60 L48 70 L70 68" fill="#f2efe6"/>
+    <path d="M120 60 L108 40 M108 40 L132 40" stroke-width="1.8"/>
+    <ellipse cx="235" cy="63" rx="14" ry="6" fill="#f2efe6"/>
+    <circle cx="85" cy="69" r="4.5"/><circle cx="255" cy="68" r="4.5"/>
+  </svg>`,
+  helicopter: `<svg viewBox="0 0 300 120" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#2b2b2b" stroke-width="2.2" stroke-linejoin="round">
+    <path d="M110 70 Q112 52 140 50 L190 50 Q222 52 228 62 Q230 68 222 72 L200 76 L150 78 Q118 78 110 70 Z" fill="#f2efe6"/>
+    <path d="M140 50 L148 34 Q150 30 154 34 L162 50" fill="#f2efe6"/>
+    <path d="M228 58 L272 56 L272 62 L226 66" fill="#f2efe6"/>
+    <path d="M40 44 L300 44" stroke-width="3"/>
+    <path d="M168 44 L166 52 M180 44 L178 52" stroke-width="1.6"/>
+    <path d="M148 78 L142 96 L152 96 L158 80 M188 76 L192 94 L200 94 L198 76" stroke-width="1.8"/>
+  </svg>`
+};
+
+// ICAO type prefix → silhouette guess (t: aircraft type code like "B738", "A320", "C172")
+function silFromType(t, cat, gs, altM) {
+  const T = (t || '').toUpperCase();
+  const heli = ['R22','R44','EC35','H125','H135','H145','AW139','AW109','B06','B407','S76','AS35','EC13'];
+  if (cat === 'A7' || heli.some(h => T.startsWith(h))) return 'helicopter';
+  if (cat === 'A1' || /^(C1|C2|C7|PA-|PA2|P28|SR2|SR22|DA4|M20|B18|BE5|BE3)/.test(T)) return 'light';
+  if (cat === 'A5' || /^(A3|A2|B73|B74|B75|B76|B77|B78|E17|E19|MD8|MD9|MD1|B38|B39|B3X|B46|B52|B55|B59|B54)/.test(T)) return 'airliner';
+  if (cat === 'A4' || /^(A1|A2|B12|E14|E5|SF3|AT4|AT7|AT7|DH8|DHC|Q40|SWS|PC1|PC2|ATR|FK7|F70|CN-|SU9|AN1)/.test(T)) {
+    // large turboprops vs small jets: lean turboprop for props, twinjet for regional jets
+    if (/^(E17|E75|CRJ|ERJ|SF3|M80|B31|B32)/.test(T)) return 'twinjet';
+    if (/^(AT4|AT7|ATR|DH8|DHC|Q40|SWS|PC1|PC2|SF3|F70|FK7|AN1|CN-)/.test(T)) return 'turboprop';
+    return 'twinjet';
+  }
+  if (cat === 'A2' || cat === 'A3') return 'turboprop';
+  if (cat === 'A6') return altM > 20000 ? 'airliner' : 'twinjet';
+  // unknown category: guess from performance
+  if (gs == null) return 'light';
+  if (gs > 330 && altM > 20000) return 'airliner';
+  if (gs > 230) return 'twinjet';
+  if (gs > 120) return 'turboprop';
+  return 'light';
+}
+
+// ───────── helpers ─────────
+const R_EARTH = 6371, NM = 1.852;
+function haversine(lat1, lon1, lat2, lon2) {
+  const toR = Math.PI / 180;
+  const dLat = (lat2 - lat1) * toR, dLon = (lon2 - lon1) * toR;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*toR)*Math.cos(lat2*toR)*Math.sin(dLon/2)**2;
+  return 2 * R_EARTH * Math.asin(Math.sqrt(a));
+}
+function bearing(lat1, lon1, lat2, lon2) {
+  const toR = Math.PI / 180;
+  const y = Math.sin((lon2-lon1)*toR) * Math.cos(lat2*toR);
+  const x = Math.cos(lat1*toR)*Math.sin(lat2*toR) - Math.sin(lat1*toR)*Math.cos(lat2*toR)*Math.cos((lon2-lon1)*toR);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+const compassOf = b => COMPASS[Math.round(b / 22.5) % 16];
+const mToFt = m => Math.round(m * 3.28084);
+function vratePhrase(fpm, altM) {
+  if (fpm == null) return ['level', ''];
+  if (fpm > 192)  return ['climbing', 'climb'];      // > ~1 m/s
+  if (fpm < -192) {
+    if (altM != null && altM < 900) return ['on approach', 'desc'];
+    return ['descending', 'desc'];
+  }
+  return ['level', 'level'];
+}
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ───────── data sources ─────────
+async function geocode(q) {
+  const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=en&format=json`);
+  const j = await r.json();
+  if (!j.results || !j.results.length) throw new Error(`Couldn't find "${q}". Try another spelling.`);
+  const g = j.results[0];
+  return { lat: g.latitude, lon: g.longitude, name: [g.name, g.admin1, g.country].filter(Boolean).join(', ') };
+}
+
+// Normalised aircraft: {hex, callsign, type, cat, altM, gsKt, vrateFpm, lat, lon, dist, brg}
+async function fetchAircraft(lat, lon, radiusKm) {
+  try { return await fromAdsbLol(lat, lon, radiusKm); }
+  catch (e) { console.warn('adsb.lol failed, falling back to adsb.fi:', e); }
+  try { return await fromAdsbFi(lat, lon, radiusKm); }
+  catch (e) { console.warn('adsb.fi failed, falling back to OpenSky:', e); return await fromOpenSky(lat, lon, radiusKm); }
+}
+
+// adsb.lol and adsb.fi share the same readsb-derived response shape (ac[]),
+// so one mapper serves both.
+function mapReadsb(j, lat, lon, radiusKm) {
+  return (j.ac || [])
+    .filter(a => a.alt_baro !== 'ground' && typeof a.alt_baro === 'number' || typeof a.alt_geom === 'number')
+    .map(a => {
+      const altM = typeof a.alt_baro === 'number' ? a.alt_baro * 0.3048 : a.alt_geom * 0.3048;
+      const dist = a.dst != null ? a.dst * NM : haversine(lat, lon, a.lat, a.lon);
+      return {
+        hex: a.hex, callsign: (a.flight || '').trim(), reg: a.r || '',
+        type: a.t || '', cat: a.category || '',
+        altM, gsKt: a.gs, vrateFpm: a.baro_rate != null ? a.baro_rate : a.geom_rate,
+        lat: a.lat, lon: a.lon, dist, brg: a.dir != null ? a.dir : bearing(lat, lon, a.lat, a.lon)
+      };
+    })
+    .filter(a => a.lat != null && a.dist <= radiusKm && a.altM > 0)
+    .sort((a, b) => a.dist - b.dist)
+    .slice(0, 9);
+}
+
+async function fromAdsbLol(lat, lon, radiusKm) {
+  const r = await apiFetch(
+    `https://api.adsb.lol/v2/point/${lat.toFixed(3)}/${lon.toFixed(3)}/${Math.ceil(radiusKm / NM)}`,
+    `/api/adsblol/point/${lat.toFixed(3)}/${lon.toFixed(3)}/${Math.ceil(radiusKm / NM)}`
+  );
+  if (!r.ok) throw new Error('adsb.lol HTTP ' + r.status);
+  return mapReadsb(await r.json(), lat, lon, radiusKm);
+}
+
+async function fromAdsbFi(lat, lon, radiusKm) {
+  const r = await apiFetch(
+    `https://api.adsb.fi/v1/point/${lat.toFixed(3)}/${lon.toFixed(3)}/${Math.ceil(radiusKm / NM)}`,
+    `/api/adsbfi/point/${lat.toFixed(3)}/${lon.toFixed(3)}/${Math.ceil(radiusKm / NM)}`
+  );
+  if (!r.ok) throw new Error('adsb.fi HTTP ' + r.status);
+  return mapReadsb(await r.json(), lat, lon, radiusKm);
+}
+
+async function fromOpenSky(lat, lon, radiusKm) {
+  const dLat = radiusKm / 111, dLon = radiusKm / (111 * Math.cos(lat * Math.PI / 180) || 1);
+  const url = `https://opensky-network.org/api/states/all?lamin=${(lat-dLat).toFixed(4)}&lomin=${(lon-dLon).toFixed(4)}&lamax=${(lat+dLat).toFixed(4)}&lomax=${(lon+dLon).toFixed(4)}`;
+  const r = await fetch(url);
+  if (r.status === 429) throw new Error('Rate limited by OpenSky — wait a moment and retry.');
+  if (!r.ok) throw new Error('OpenSky request failed (HTTP ' + r.status + ').');
+  const j = await r.json();
+  return (j.states || [])
+    .map(s => ({
+      hex: s[0], callsign: (s[1] || '').trim(), reg: '', type: '',
+      cat: typeof s[17] === 'number' ? String(s[17]) : '',
+      altM: s[7] != null ? s[7] : s[13], gsKt: s[9] != null ? s[9] * 1.94384 : null,
+      vrateFpm: s[11] != null ? s[11] * 196.85 : null,
+      lat: s[6], lon: s[5], onGround: s[8]
+    }))
+    .filter(a => !a.onGround && a.lat != null && a.lon != null && (a.altM == null || a.altM > 0))
+    .map(a => ({ ...a, dist: haversine(lat, lon, a.lat, a.lon), brg: bearing(lat, lon, a.lat, a.lon) }))
+    .filter(a => a.dist <= radiusKm)
+    .sort((a, b) => a.dist - b.dist)
+    .slice(0, 9);
+}
+
+// ───────── optional local proxy ─────────
+// Browsers cannot set a custom User-Agent, but api.adsb.lol rejects browser UAs
+// and api.planespotters.net requires an identifying one. Running
+//   node proxy.mjs
+// serves this page on :8787 and exposes /api/* with proper headers.
+// The page auto-detects it once; falls back to direct fetch otherwise
+// (direct works for adsb.lol in Chrome; photos then fall back to silhouettes).
+// Probe once: our proxy forwards /api/photohex/<hex> upstream, which always
+// answers 200 (even for unknown hexes) when the proxy is running.
+let PROXY = null;
+async function detectProxy() {
+  if (PROXY !== null) return PROXY;
+  try {
+    const r = await fetch('/api/photohex/000000', { cache: 'no-store' });
+    PROXY = r.ok && (await r.json()).photos !== undefined;
+  } catch { PROXY = false; }
+  return PROXY;
+}
+
+async function apiFetch(upstreamUrl, proxyPath) {
+  if (await detectProxy()) {
+    const r = await fetch(proxyPath, { cache: 'no-store' });
+    if (r.ok) return r;
+    throw new Error('proxy HTTP ' + r.status);
+  }
+  return fetch(upstreamUrl, { cache: 'no-store' });
+}
+
+// Photo of the very airframe, from planespotters.net (hex lookup).
+async function fetchPhoto(hex) {
+  try {
+    const r = await apiFetch(
+      'https://api.planespotters.net/pub/photos/hex/' + encodeURIComponent(hex),
+      '/api/photohex/' + encodeURIComponent(hex)
+    );
+    if (!r.ok) return null;
+    const j = await r.json();
+    const p = j && j.photos && j.photos[0];
+    if (!p) return null;
+    return {
+      src: (p.thumbnail_large || p.thumbnail).src,
+      link: p.link, photographer: p.photographer
+    };
+  } catch (e) { console.warn('photo lookup failed for', hex, e); return null; }
+}
+
+// ───────── render ─────────
+const $ = id => document.getElementById(id);
+const statusEl = $('status'), entriesEl = $('entries'), goBtn = $('goBtn');
+let target = null, timer = null, lastRenderArgs = null;
+
+function setStatus(m) { statusEl.textContent = m || ''; }
+
+function tick() {
+  $('clock').textContent = new Date().toLocaleString('en-GB', {
+    hour: '2-digit', minute: '2-digit', weekday: 'short', day: 'numeric', month: 'short'
+  });
+}
+tick(); setInterval(tick, 15000);
+
+async function refresh() {
+  if (!target) return;
+  const radiusKm = +$('radiusSel').value;
+  $('radiusLabel').textContent = radiusKm;
+  try {
+    goBtn.disabled = true;
+    setStatus('Fetching live traffic…');
+    const aircraft = await fetchAircraft(target.lat, target.lon, radiusKm);
+
+    // Look up photos in parallel (best effort)
+    const withPhotos = await Promise.all(aircraft.map(async a => ({ ...a, photo: await fetchPhoto(a.hex) })));
+    lastRenderArgs = { aircraft: withPhotos, placeName: target.name, radiusKm };
+    render(withPhotos, target.name, radiusKm);
+    setStatus('');
+    $('lastUpdate').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  } catch (e) {
+    setStatus('⚠ ' + e.message);
+  } finally {
+    goBtn.disabled = false;
+  }
+}
+
+function render(aircraft, placeName, radiusKm) {
+  const style = $('styleSel').value;
+  $('title').innerHTML = `Overhead ${escapeHtml(placeName)} &middot; Within ${radiusKm} km &middot; In the air now`;
+  $('subhead').innerHTML = aircraft.length
+    ? `<b>${aircraft.length} aircraft</b> currently airborne within ${radiusKm} km, sorted nearest first.`
+    : `No aircraft airborne within ${radiusKm} km of <b>${escapeHtml(placeName)}</b> right now.`;
+
+  if (!aircraft.length) {
+    entriesEl.innerHTML = `<div class="empty"><div class="big">✈</div>Quiet skies for now. Refresh in a minute or widen the radius.</div>`;
+    return;
+  }
+
+  entriesEl.innerHTML = aircraft.map((a, i) => {
+    const ft = a.altM != null ? mToFt(a.altM).toLocaleString('en-US') : null;
+    const [phrase, cls] = vratePhrase(a.vrateFpm, a.altM);
+    const sil = silFromType(a.type, a.cat, a.gsKt, a.altM);
+    const altLine = ft ? `${ft} ft ${escapeHtml(phrase)}` : `altitude unknown · ${escapeHtml(phrase)}`;
+    const where = a.dist < 3 ? 'directly overhead'
+      : `${compassOf(a.brg)} · ${a.dist.toFixed(a.dist < 10 ? 1 : 0)} km out`;
+    const art = (a.photo && style !== 'silhouette')
+      ? `<img class="img-${style}" src="${escapeHtml(photoSrc(a.photo.src))}" alt="aircraft photo" loading="lazy">
+         ${a.photo.photographer ? `<div class="credit">photo: ${escapeHtml(a.photo.photographer)} · <a href="${escapeHtml(a.photo.link)}" target="_blank" rel="noopener">plnspttrs</a></div>` : ''}`
+      : SIL[sil];
+    return `<div class="entry ${i % 2 ? 'flip' : ''}">
+      <div class="art">${art}</div>
+      <div class="caption">
+        <div class="callsign-row">
+          <span class="callsign">${escapeHtml(a.callsign || a.reg || '—')}</span>
+          ${a.type ? `<span class="atype">${escapeHtml(a.type)}</span>` : ''}
+          ${a.reg ? `<span class="country">${escapeHtml(a.reg)}</span>` : ''}
+        </div>
+        <div class="detail">${altLine}</div>
+        <div class="where">${where}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  if (style === 'pixel') pixelateImages();
+}
+
+// ── photo handling ──
+// Route images through the proxy when available so canvas pixelation works
+// (the proxy adds Access-Control-Allow-Origin; direct t.plnspttrs.net is fine
+// for <img> but would taint a canvas).
+function photoSrc(url) { return PROXY ? '/api/img?u=' + encodeURIComponent(url) : url; }
+
+function pixelateImages() {
+  document.querySelectorAll('.entry img.img-pixel').forEach(img => {
+    if (img.dataset.pixelated) return;
+    const im = new Image();
+    im.crossOrigin = 'anonymous';
+    im.src = img.src;
+    im.onload = () => {
+      const w = 56, h = Math.max(8, Math.round(w * im.naturalHeight / im.naturalWidth));
+      const small = document.createElement('canvas'); small.width = w; small.height = h;
+      const sctx = small.getContext('2d');
+      sctx.imageSmoothingEnabled = false;
+      sctx.drawImage(im, 0, 0, w, h);
+      const big = document.createElement('canvas');
+      big.width = im.naturalWidth; big.height = im.naturalHeight;
+      const bctx = big.getContext('2d');
+      bctx.imageSmoothingEnabled = false;
+      bctx.drawImage(small, 0, 0, big.width, big.height);
+      try { img.src = big.toDataURL('image/png'); img.dataset.pixelated = '1'; }
+      catch (e) { console.warn('canvas pixelation blocked (tainted); image needs the proxy', e); }
+    };
+  });
+}
+
+async function search() {
+  const q = $('placeInput').value.trim();
+  if (!q) { setStatus('Type a location first.'); return; }
+  try {
+    goBtn.disabled = true;
+    setStatus('Looking up location…');
+    target = await geocode(q);
+    $('subhead').innerHTML = `Over <b>${escapeHtml(target.name)}</b> — searching live traffic…`;
+    await refresh();
+    if (timer) clearInterval(timer);
+    timer = setInterval(refresh, 60000);
+  } catch (e) {
+    setStatus('⚠ ' + e.message);
+    goBtn.disabled = false;
+  }
+}
+
+goBtn.addEventListener('click', search);
+$('placeInput').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+$('radiusSel').addEventListener('change', () => { if (target) refresh(); });
+$('styleSel').addEventListener('change', () => { if (lastRenderArgs) render(lastRenderArgs.aircraft, lastRenderArgs.placeName, lastRenderArgs.radiusKm); });
+
+// ───────── AI painting (OpenRouter) ─────────
+// Key is stored in localStorage only. First use asks for it; clear with the
+// ✕ or by wiping site storage. Direct browser→OpenRouter calls are CORS-legal.
+const orKeyInput = () => {
+  let k = localStorage.getItem('or_key');
+  if (!k) {
+    k = prompt('Enter your OpenRouter API key (sk-or-…). Stored locally in your browser only.');
+    if (k) localStorage.setItem('or_key', k.trim());
+  }
+  return k;
+};
+
+function buildPaintPrompt(aircraft, placeName) {
+  const STYLE_HINTS = {
+    photo: 'clean realistic illustration on white paper', sepia: 'sepia-toned vintage illustration',
+    watercolour: 'delicate watercolour painting with visible washes and paper grain',
+    engraving: 'fine copperplate engraving, fine crosshatched lines, monochrome',
+    woodblock: 'bold Japanese woodblock print, flat colour blocks, keyline outlines',
+    risograph: 'risograph print, limited 2-colour palette, halftone grain',
+    blueprint: 'technical blueprint, white lines on deep blue',
+    charcoal: 'charcoal sketch, soft smudged shading',
+    pixel: '16-bit pixel art', silhouette: 'black ink silhouette on cream paper'
+  };
+  const style = $('styleSel').value;
+  const hint = STYLE_HINTS[style] || 'delicate watercolour painting';
+  const list = aircraft.slice(0, 7).map((a, i) => {
+    const ft = a.altM != null ? mToFt(a.altM).toLocaleString('en-US') : 'unknown altitude';
+    const [phrase] = vratePhrase(a.vrateFpm, a.altM);
+    return `${i+1}. ${a.callsign || a.reg || 'unnamed'} — ${a.type || 'aircraft'}${a.reg ? ' ('+a.reg+')' : ''}, ${ft} ft, ${phrase}`;
+  }).join('\n');
+  return `A vintage aircraft spotter's field-guide plate, painted as ${hint}, on aged cream paper. Hand-lettered ink serif title at top: "OVERHEAD ${placeName.toUpperCase()} · IN THE AIR NOW". Arrange these ${Math.min(aircraft.length,7)} aircraft loosely across the sky, each with a tiny hand-lettered caption giving its callsign and altitude:\n\n${list}\n\nLoose composition, muted palette of dusty blues, rust reds, warm greys. No photorealism, no borders, no extra text.`;
+}
+
+async function paint() {
+  if (!lastRenderArgs || !lastRenderArgs.aircraft.length) { setStatus('Search a location with live traffic first.'); return; }
+  const key = orKeyInput();
+  if (!key) { setStatus('No OpenRouter key — painting cancelled.'); return; }
+  const { aircraft, placeName } = lastRenderArgs;
+  try {
+    $('paintBtn').disabled = true;
+    setStatus('Painting… this takes ~20 s and costs ~$0.05');
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'google/gemini-3.1-flash-lite-image',
+        messages: [{ role: 'user', content: buildPaintPrompt(aircraft, placeName) }],
+        modalities: ['image', 'text']
+      })
+    });
+    const j = await r.json();
+    if (j.error) {
+      if (r.status === 401) localStorage.removeItem('or_key'); // bad key → re-ask next time
+      throw new Error(j.error.message || 'OpenRouter error');
+    }
+    const img = j.choices[0].message.images?.[0]?.image_url?.url;
+    if (!img) throw new Error('No image in OpenRouter response');
+    $('paintingImg').src = img;
+    $('paintingMeta').textContent = `painted ${new Date().toLocaleTimeString('en-GB')} · ${j.model} · ${(aircraft.length)} aircraft`;
+    $('painting').hidden = false;
+    setStatus('');
+  } catch (e) {
+    setStatus('⚠ Painting failed: ' + e.message);
+  } finally {
+    $('paintBtn').disabled = false;
+  }
+}
+$('paintBtn').addEventListener('click', paint);
+</script>
+</body>
+</html>
